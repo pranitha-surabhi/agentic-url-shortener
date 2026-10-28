@@ -1,3 +1,4 @@
+import hashlib
 import tempfile
 import unittest
 from pathlib import Path
@@ -51,7 +52,7 @@ class GraphScenarios(unittest.TestCase):
             graph = build_graph(self.repo, self.sandbox, InMemorySaver())
             paused = start(graph, "greenfield", "Create a URL feature")
             self.assertIn("__interrupt__", paused)
-            approved = resume(graph, "greenfield", {"approved": True})
+            approved = resume(graph, "greenfield", {"approved": True, "patchSha256": hashlib.sha256(paused["__interrupt__"][0].value["diff"].encode()).hexdigest()})
             self.assertEqual("PENDING_SANDBOX_TESTS", approved["result"]["status"])
             workspace = Path(approved["workspace"])
             changed = sorted(ALLOWLIST)[0]
