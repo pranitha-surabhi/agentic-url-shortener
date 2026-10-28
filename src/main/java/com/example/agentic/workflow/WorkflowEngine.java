@@ -148,6 +148,9 @@ public class WorkflowEngine {
                         + context.getWorkflowId()
         );
 
+        // Capture initial state before running any engineering nodes.
+        executionStore.save(context);
+
         Set<WorkflowState> completed =
                 new HashSet<>();
 
@@ -208,6 +211,8 @@ public class WorkflowEngine {
                         WorkflowCheckpoint.capture(
                                 context
                         );
+            
+                executionStore.save(context);
             }
 
             if (context.getStatus()
@@ -303,6 +308,7 @@ public class WorkflowEngine {
         context.getStageApprovals().put(approvedStage, reviewer);
         context.setApprovalGranted(true);
         context.addAuditEvent("Reviewer " + reviewer + " approved stage " + approvedStage);
+        executionStore.save(context);
         context.setStatus(WorkflowStatus.RUNNING);
         WorkflowCheckpoint checkpoint = WorkflowCheckpoint.capture(context);
         try {
@@ -318,6 +324,8 @@ public class WorkflowEngine {
                 completed.addAll(executed);
                 if (context.getStatus() == WorkflowStatus.WAITING_FOR_APPROVAL) break;
                 checkpoint = WorkflowCheckpoint.capture(context);
+            
+                executionStore.save(context);
             }
             if (completed.size() == graph.getNodes().size()
                     && context.getStatus() == WorkflowStatus.RUNNING) {
@@ -519,6 +527,8 @@ public class WorkflowEngine {
                         WorkflowCheckpoint.capture(
                                 context
                         );
+            
+                executionStore.save(context);
             }
 
             if (context.getStatus()
