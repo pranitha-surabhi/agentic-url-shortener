@@ -13,7 +13,9 @@ import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.util.HexFormat;
 import java.util.List;
-import java.util.Locale;
+import java.net.URLClassLoader;
+import java.net.URL;
+import java.lang.reflect.Method;
 
 /**
  * Small, deterministic engineering executor: generates real Java source,
@@ -69,43 +71,35 @@ public class EngineeringEvidenceService {
             int compileCode = compiler.run(null, null, null,
                     "-d", work.toString(), source.toString());
             boolean compiled = compileCode == 0;
-            // Independently validate the source's required behavior using the
-            // same conservative URI rules, without loading generated code.
-            // This is a contract check; it is NOT a generated-code execution test.
+            // Compile a trusted deterministic template, then execute actual
+            // generated methods against the explicit acceptance checks.
             List<String> cases = List.of(
-                    "https://example.com",
-                    "http://example.org/path",
-                    "javascript:alert(1)"
-            );
+                    "https://example.com", "http://example.org/path", "javascript:alert(1)");
             int passed = 0;
-            for (int i = 0; i < cases.size(); i++) {
-                String candidate = cases.get(i);
-                boolean actual = uriContract(candidate);
-                boolean expected = i != 2;
-                if (actual == expected) passed++;
+            if (compiled) {
+                try (URLClassLoader loader = new URLClassLoader(
+                        new URL[]{work.toUri().toURL()}, null)) {
+                    Class<?> generated = Class.forName("GeneratedUrlPolicy", true, loader);
+                    Method method = generated.getMethod("isHttpUrl", String.class);
+                    for (int i = 0; i < cases.size(); i++) {
+                        boolean actual = (boolean) method.invoke(null, cases.get(i));
+                        if (actual == (i != 2)) passed++;
+                    }
+                } catch (ReflectiveOperationException ex) {
+                    throw new IllegalStateException("Generated source validation failed", ex);
+                }
             }
             boolean contractsPassed = passed == cases.size();
             Path report = work.resolve("validation.txt");
             Files.writeString(report, "compilationPassed=" + compiled
                     + "\ncontractAssertionsPassed=" + passed + "/" + cases.size()
-                    + "\nNOTE: contract assertions do not execute generated code; CI must validate integration.\n",
+                    + "\nNOTE: generated deterministic code was executed; CI must validate integration.\n",
                     StandardCharsets.UTF_8, StandardOpenOption.CREATE,
                     StandardOpenOption.TRUNCATE_EXISTING);
             return new Evidence(source.toString(), digest(code), report.toString(),
                     compiled, contractsPassed, cases.size());
         } catch (IOException e) {
             throw new IllegalStateException("Engineering artifact generation failed", e);
-        }
-    }
-
-    private boolean uriContract(String input) {
-        try {
-            java.net.URI uri = java.net.URI.create(input);
-            String scheme = uri.getScheme();
-            return ("http".equalsIgnoreCase(scheme) || "https".equalsIgnoreCase(scheme))
-                    && uri.getHost() != null && !uri.getHost().isBlank();
-        } catch (RuntimeException ex) {
-            return false;
         }
     }
 
