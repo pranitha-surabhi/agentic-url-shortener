@@ -1,6 +1,14 @@
 package com.example.agentic.workflow;
 
 import org.springframework.stereotype.Component;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Value;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.StandardCopyOption;
+import java.nio.file.StandardOpenOption;
+import java.io.IOException;
+import java.util.Properties;
 
 import java.time.Duration;
 import java.time.LocalDateTime;
@@ -8,6 +16,73 @@ import java.util.concurrent.atomic.AtomicLong;
 
 @Component
 public class WorkflowMetrics {
+
+    private final Path metricsFile;
+
+    /** Tests and non-Spring callers use isolated in-memory counters. */
+    public WorkflowMetrics() {
+        this.metricsFile = null;
+    }
+
+    @Autowired
+    public WorkflowMetrics(@Value("${agentic.metrics.file:data/workflow-metrics.properties}") String file) {
+        this.metricsFile = Path.of(file).toAbsolutePath().normalize();
+        loadCounters();
+    }
+
+    private synchronized void loadCounters() {
+        if (metricsFile == null || !Files.isRegularFile(metricsFile)) return;
+        try (var in = Files.newInputStream(metricsFile)) {
+            Properties p = new Properties();
+            p.load(in);
+            for (var entry : persistentCounters().entrySet()) {
+                entry.getValue().set(Long.parseLong(p.getProperty(entry.getKey(), "0")));
+            }
+        } catch (IOException | NumberFormatException ex) {
+            throw new IllegalStateException("Unable to read durable workflow metrics", ex);
+        }
+    }
+
+    private synchronized void persistCounters() {
+        if (metricsFile == null) return;
+        try {
+            Path parent = metricsFile.getParent();
+            Files.createDirectories(parent);
+            Properties props = new Properties();
+            for (var entry : persistentCounters().entrySet()) {
+                props.setProperty(entry.getKey(), Long.toString(entry.getValue().get()));
+            }
+            Path temp = Files.createTempFile(parent, "metrics-", ".tmp");
+            try {
+                try (var out = Files.newOutputStream(temp, StandardOpenOption.TRUNCATE_EXISTING)) {
+                    props.store(out, "Durable workflow reliability metrics");
+                }
+                Files.move(temp, metricsFile, StandardCopyOption.ATOMIC_MOVE,
+                        StandardCopyOption.REPLACE_EXISTING);
+            } finally {
+                Files.deleteIfExists(temp);
+            }
+        } catch (IOException ex) {
+            throw new IllegalStateException("Unable to persist workflow metrics", ex);
+        }
+    }
+
+    private java.util.Map<String, AtomicLong> persistentCounters() {
+        java.util.Map<String, AtomicLong> values = new java.util.LinkedHashMap<>();
+        values.put("totalExecutions", totalExecutions);
+        values.put("successfulExecutions", successfulExecutions);
+        values.put("failedExecutions", failedExecutions);
+        values.put("rolledBackExecutions", rolledBackExecutions);
+        values.put("waitingForApprovalExecutions", waitingForApprovalExecutions);
+        values.put("stoppedExecutions", stoppedExecutions);
+        values.put("totalRetries", totalRetries);
+        values.put("totalRollbacks", totalRollbacks);
+        values.put("totalExecutionTimeMillis", totalExecutionTimeMillis);
+        values.put("completedExecutionSamples", completedExecutionSamples);
+        values.put("totalRecoveryTimeMillis", totalRecoveryTimeMillis);
+        values.put("recoverySamples", recoverySamples);
+        return values;
+    }
 
     private final AtomicLong totalExecutions =
             new AtomicLong();
@@ -47,6 +122,7 @@ public class WorkflowMetrics {
 
     public void recordExecutionStarted() {
         totalExecutions.incrementAndGet();
+        persistCounters();
     }
 
     public void recordExecutionCompleted(
@@ -136,6 +212,7 @@ public class WorkflowMetrics {
             recoverySamples
                     .incrementAndGet();
         }
+        persistCounters();
     }
 
     public long getTotalExecutions() {
