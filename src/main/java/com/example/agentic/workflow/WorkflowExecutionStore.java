@@ -1,12 +1,24 @@
 package com.example.agentic.workflow;
 
 import org.springframework.stereotype.Component;
+import org.springframework.beans.factory.annotation.Autowired;
 
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 
 @Component
 public class WorkflowExecutionStore {
+
+    private final WorkflowAuditJournal auditJournal;
+
+    public WorkflowExecutionStore() {
+        this.auditJournal = null;
+    }
+
+    @Autowired
+    public WorkflowExecutionStore(WorkflowAuditJournal auditJournal) {
+        this.auditJournal = auditJournal;
+    }
 
     private final Map<String, WorkflowContext> workflows =
             new ConcurrentHashMap<>();
@@ -26,6 +38,9 @@ public class WorkflowExecutionStore {
                 context.getWorkflowId(),
                 context
         );
+        if (auditJournal != null) {
+            auditJournal.appendNew(context.getWorkflowId(), context.getAuditEvents());
+        }
     }
 
     public WorkflowContext get(
