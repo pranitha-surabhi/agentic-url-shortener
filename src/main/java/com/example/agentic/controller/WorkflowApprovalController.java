@@ -28,4 +28,15 @@ public class WorkflowApprovalController {
                 "approvedStage", stage.name(),
                 "approvalRequired", result.isApprovalRequired());
     }
+
+    @PostMapping("/{workflowId}/safe-stop")
+    public Map<String, Object> safeStop(
+            @PathVariable String workflowId,
+            @RequestParam String reason,
+            @RequestHeader(value = "X-Reviewer-Token", required = false) String token) {
+        authorization.verify(token);
+        WorkflowResult result = engine.requestSafeStop(workflowId, reason);
+        return Map.of("workflowId", result.getWorkflowId(),
+                "status", result.getStatus().name());
+    }
 }
