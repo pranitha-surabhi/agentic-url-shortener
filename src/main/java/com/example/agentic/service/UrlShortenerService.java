@@ -13,6 +13,7 @@ import com.example.agentic.repository.ShortUrlRepository;
 import com.example.agentic.util.ShortCodeGenerator;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
+import org.springframework.beans.factory.annotation.Value;
 
 import java.time.LocalDateTime;
 import java.util.UUID;
@@ -22,6 +23,9 @@ import java.util.UUID;
 public class UrlShortenerService {
 
     private final ShortUrlRepository repository;
+
+    @Value("${app.public-base-url:http://localhost:9091}")
+    private String publicBaseUrl = "http://localhost:9091";
 
     public ShortUrlResponse create(CreateShortUrlRequest request) {
 
@@ -69,6 +73,9 @@ public class UrlShortenerService {
                 .orElseThrow(() ->
                         new ResourceNotFoundException(ApiConstants.URL_NOT_FOUND));
 
+        if (!UrlValidator.isValid(request.getOriginalUrl())) {
+            throw new InvalidUrlException(ApiConstants.INVALID_URL);
+        }
         shortUrl.setOriginalUrl(request.getOriginalUrl());
         shortUrl.setUpdatedAt(LocalDateTime.now());
 
@@ -123,7 +130,7 @@ public class UrlShortenerService {
                 .id(shortUrl.getId())
                 .originalUrl(shortUrl.getOriginalUrl())
                 .shortCode(shortUrl.getShortCode())
-                .shortUrl("http://localhost:8080/" + shortUrl.getShortCode())
+                .shortUrl(publicBaseUrl.replaceAll("/+$", "") + "/" + shortUrl.getShortCode())
                 .createdAt(shortUrl.getCreatedAt())
                 .updatedAt(shortUrl.getUpdatedAt())
                 .expiresAt(shortUrl.getExpiresAt())
@@ -132,7 +139,7 @@ public class UrlShortenerService {
                 .build();
     }
 
-    public String redirect(String shortCode) {
+    public synchronized String redirect(String shortCode) {
 
         ShortUrl shortUrl = repository.findByShortCode(shortCode)
                 .orElseThrow(() ->

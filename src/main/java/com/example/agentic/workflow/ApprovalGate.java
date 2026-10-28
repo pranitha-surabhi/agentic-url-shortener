@@ -14,9 +14,7 @@ public class ApprovalGate {
                 || state == WorkflowState.RELEASE_READINESS;
     }
 
-    public boolean isApproved(
-            WorkflowContext context) {
-
-        return context.isApprovalGranted();
+    public boolean isApproved(WorkflowContext context, WorkflowState state) {
+        return context.getStageApprovals().containsKey(state);
     }
 }

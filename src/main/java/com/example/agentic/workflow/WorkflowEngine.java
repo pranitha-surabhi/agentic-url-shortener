@@ -148,6 +148,9 @@ public class WorkflowEngine {
                         + context.getWorkflowId()
         );
 
+        // Capture initial state before running any engineering nodes.
+        executionStore.save(context);
+
         Set<WorkflowState> completed =
                 new HashSet<>();
 
@@ -208,6 +211,8 @@ public class WorkflowEngine {
                         WorkflowCheckpoint.capture(
                                 context
                         );
+            
+                executionStore.save(context);
             }
 
             if (context.getStatus()
@@ -215,13 +220,13 @@ public class WorkflowEngine {
                     && completed.size()
                     == graph.getNodes().size()) {
 
-                context.setCurrentState(
-                        WorkflowState.COMPLETED
-                );
-
-                context.setStatus(
-                        WorkflowStatus.COMPLETED
-                );
+                if ("BLOCKED".equals(context.getStageOutputs().get("releaseReadiness"))) {
+                    context.setStatus(WorkflowStatus.STOPPED);
+                    context.addAuditEvent("Release blocked: missing trusted execution evidence");
+                } else {
+                    context.setCurrentState(WorkflowState.COMPLETED);
+                    context.setStatus(WorkflowStatus.COMPLETED);
+                }
 
                 context.setCompletedAt(
                         LocalDateTime.now()
@@ -238,6 +243,14 @@ public class WorkflowEngine {
                     System.currentTimeMillis();
 
             context.restore(checkpoint);
+            try {
+                if (ArtifactWorkspaceRollback.rollback(context.getWorkflowId())) {
+                    context.addAuditEvent("Rolled back generated workspace after failure");
+                }
+            } catch (Exception cleanupFailure) {
+                context.addAuditEvent("Workspace cleanup requires manual review: "
+                        + cleanupFailure.getClass().getSimpleName());
+            }
 
             context.setStatus(
                     WorkflowStatus.ROLLED_BACK
@@ -272,6 +285,95 @@ public class WorkflowEngine {
         executionStore.save(context);
 
         return result;
+    }
+
+
+    /** Request cooperative safe-stop at the next node execution boundary. */
+    public synchronized WorkflowResult requestSafeStop(String workflowId, String reason) {
+        WorkflowContext context = executionStore.get(workflowId);
+        if (context == null) throw new IllegalArgumentException("Unknown workflow ID");
+        if (reason == null || reason.isBlank() || reason.length() > 500) {
+            throw new IllegalArgumentException("A concise stop reason is required");
+        }
+        safeStopController.requestStop(context, reason);
+        context.setCompletedAt(LocalDateTime.now());
+        executionStore.save(context);
+        return buildResult(context);
+    }
+
+    /**
+     * Resume the existing dependency graph after an authorized human decision.
+     * Completed stages are recovered from their persisted stage output keys.
+     * Approval is scoped to the specified stage, not the whole workflow.
+     */
+    public synchronized WorkflowResult approveAndResume(
+            String workflowId, WorkflowState approvedStage, String reviewer) {
+        WorkflowContext context = executionStore.get(workflowId);
+        if (context == null) throw new IllegalArgumentException("Unknown workflow ID");
+        if (context.getStatus() != WorkflowStatus.WAITING_FOR_APPROVAL)
+            throw new IllegalStateException("Workflow is not awaiting human approval");
+        if (reviewer == null || !reviewer.matches("[A-Za-z0-9._-]{3,80}"))
+            throw new IllegalArgumentException("Valid reviewer identifier required");
+        Set<WorkflowState> completed = new HashSet<>();
+        for (WorkflowGraphNode graphNode : graph.getNodes()) {
+            WorkflowState state = graphNode.getWorkflowNode().getState();
+            if (context.getStageOutputs().containsKey(stageKey(state))) {
+                completed.add(state);
+            }
+        }
+        boolean stageReady = findReadyNodes(completed).stream().anyMatch(
+                node -> node.getWorkflowNode().getState() == approvedStage);
+        if (!stageReady || !approvalGate.requiresApproval(context, approvedStage)) {
+            throw new IllegalArgumentException("Stage is not an active approval checkpoint");
+        }
+        context.getStageApprovals().put(approvedStage, reviewer);
+        context.setApprovalGranted(true);
+        context.addAuditEvent("Reviewer " + reviewer + " approved stage " + approvedStage);
+        executionStore.save(context);
+        context.setStatus(WorkflowStatus.RUNNING);
+        WorkflowCheckpoint checkpoint = WorkflowCheckpoint.capture(context);
+        try {
+            while (completed.size() < graph.getNodes().size()
+                    && context.getStatus() == WorkflowStatus.RUNNING) {
+                if (safeStopController.shouldStop(context)) {
+                    context.setStatus(WorkflowStatus.STOPPED);
+                    break;
+                }
+                List<WorkflowGraphNode> ready = findReadyNodes(completed);
+                if (ready.isEmpty()) throw new IllegalStateException("Graph made no progress");
+                Set<WorkflowState> executed = executeReadyNodes(ready, context, checkpoint);
+                completed.addAll(executed);
+                if (context.getStatus() == WorkflowStatus.WAITING_FOR_APPROVAL) break;
+                checkpoint = WorkflowCheckpoint.capture(context);
+            
+                executionStore.save(context);
+            }
+            if (completed.size() == graph.getNodes().size()
+                    && context.getStatus() == WorkflowStatus.RUNNING) {
+                if ("BLOCKED".equals(context.getStageOutputs().get("releaseReadiness"))) {
+                    context.setStatus(WorkflowStatus.STOPPED);
+                } else {
+                    context.setStatus(WorkflowStatus.COMPLETED);
+                    context.setCurrentState(WorkflowState.COMPLETED);
+                }
+                context.setCompletedAt(LocalDateTime.now());
+            }
+        } catch (Exception exception) {
+            context.restore(checkpoint);
+            try {
+                if (ArtifactWorkspaceRollback.rollback(context.getWorkflowId())) {
+                    context.addAuditEvent("Rolled back generated workspace after failure");
+                }
+            } catch (Exception cleanupFailure) {
+                context.addAuditEvent("Workspace cleanup requires manual review: "
+                        + cleanupFailure.getClass().getSimpleName());
+            }
+            context.setStatus(WorkflowStatus.ROLLED_BACK);
+            context.addAuditEvent("Resume failed and checkpoint restored: "
+                    + exception.getClass().getSimpleName());
+        }
+        executionStore.save(context);
+        return buildResult(context);
     }
 
     /**
@@ -317,6 +419,9 @@ public class WorkflowEngine {
                         changedStage
                 );
 
+        // Any changed upstream artifact invalidates previously granted approvals.
+        context.getStageApprovals().clear();
+        context.setApprovalGranted(false);
         context.setStatus(
                 WorkflowStatus.REPLANNING
         );
@@ -451,6 +556,8 @@ public class WorkflowEngine {
                         WorkflowCheckpoint.capture(
                                 context
                         );
+            
+                executionStore.save(context);
             }
 
             if (context.getStatus()
@@ -458,13 +565,13 @@ public class WorkflowEngine {
                     && completed.size()
                     == graph.getNodes().size()) {
 
-                context.setCurrentState(
-                        WorkflowState.COMPLETED
-                );
-
-                context.setStatus(
-                        WorkflowStatus.COMPLETED
-                );
+                if ("BLOCKED".equals(context.getStageOutputs().get("releaseReadiness"))) {
+                    context.setStatus(WorkflowStatus.STOPPED);
+                    context.addAuditEvent("Release blocked: missing trusted execution evidence");
+                } else {
+                    context.setCurrentState(WorkflowState.COMPLETED);
+                    context.setStatus(WorkflowStatus.COMPLETED);
+                }
 
                 context.setCompletedAt(
                         LocalDateTime.now()
@@ -478,6 +585,14 @@ public class WorkflowEngine {
         } catch (Exception exception) {
 
             context.restore(checkpoint);
+            try {
+                if (ArtifactWorkspaceRollback.rollback(context.getWorkflowId())) {
+                    context.addAuditEvent("Rolled back generated workspace after failure");
+                }
+            } catch (Exception cleanupFailure) {
+                context.addAuditEvent("Workspace cleanup requires manual review: "
+                        + cleanupFailure.getClass().getSimpleName());
+            }
 
             context.setStatus(
                     WorkflowStatus.ROLLED_BACK
@@ -592,6 +707,7 @@ public class WorkflowEngine {
 
         WorkflowState state =
                 node.getState();
+        if (safeStopController.shouldStop(context)) return false;
 
         /*
          * Human approval gate.
@@ -609,7 +725,7 @@ public class WorkflowEngine {
                             + node.getName()
             );
 
-            if (!approvalGate.isApproved(context)) {
+            if (!approvalGate.isApproved(context, state)) {
 
                 context.addAuditEvent(
                         "Workflow paused - human approval required before: "

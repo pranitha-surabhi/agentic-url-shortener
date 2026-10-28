@@ -48,6 +48,9 @@ public class WorkflowContext {
 
     private boolean approvalGranted;
 
+    // Explicit stage approvals; re-planning invalidates this map.
+    private final Map<WorkflowState, String> stageApprovals = new LinkedHashMap<>();
+
     private boolean safeStopRequested;
 
     private LocalDateTime startedAt;

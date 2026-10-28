@@ -4,6 +4,7 @@ import com.example.agentic.used.response.ApiResponse;
 import com.example.agentic.dto.request.WorkflowReplanRequest;
 import com.example.agentic.dto.response.WorkflowReplanResponse;
 import com.example.agentic.workflow.WorkflowEngine;
+import com.example.agentic.workflow.ReviewerAuthorization;
 import com.example.agentic.workflow.WorkflowResult;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
@@ -17,10 +18,14 @@ import java.util.List;
 public class WorkflowReplanController {
 
     private final WorkflowEngine workflowEngine;
+    private final ReviewerAuthorization reviewerAuthorization;
 
     @PostMapping("/replan")
     public ResponseEntity<ApiResponse<WorkflowReplanResponse>> replan(
-            @RequestBody WorkflowReplanRequest request) {
+            @RequestBody WorkflowReplanRequest request,
+            @RequestHeader(value = "X-Reviewer-Token", required = false) String reviewerToken) {
+
+        reviewerAuthorization.verify(reviewerToken);
 
         WorkflowResult result =
                 workflowEngine.replan(
