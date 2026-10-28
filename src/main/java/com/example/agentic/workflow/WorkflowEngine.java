@@ -288,6 +288,19 @@ public class WorkflowEngine {
     }
 
 
+    /** Request cooperative safe-stop at the next node execution boundary. */
+    public synchronized WorkflowResult requestSafeStop(String workflowId, String reason) {
+        WorkflowContext context = executionStore.get(workflowId);
+        if (context == null) throw new IllegalArgumentException("Unknown workflow ID");
+        if (reason == null || reason.isBlank() || reason.length() > 500) {
+            throw new IllegalArgumentException("A concise stop reason is required");
+        }
+        safeStopController.requestStop(context, reason);
+        context.setCompletedAt(LocalDateTime.now());
+        executionStore.save(context);
+        return buildResult(context);
+    }
+
     /**
      * Resume the existing dependency graph after an authorized human decision.
      * Completed stages are recovered from their persisted stage output keys.
@@ -694,6 +707,7 @@ public class WorkflowEngine {
 
         WorkflowState state =
                 node.getState();
+        if (safeStopController.shouldStop(context)) return false;
 
         /*
          * Human approval gate.
