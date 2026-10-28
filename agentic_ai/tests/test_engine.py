@@ -78,6 +78,18 @@ class GraphScenarios(unittest.TestCase):
             final = resume(graph, "ambiguous", {"approved": False})
             self.assertEqual("REJECTED", final["result"]["status"])
 
+    def test_approval_with_wrong_patch_hash_cannot_apply(self):
+        with patch("agentic_ai.engine._model", return_value=FakeModel()):
+            graph = build_graph(self.repo, self.sandbox, InMemorySaver())
+            paused = start(graph, "wrong-hash", "Update existing validator")
+            self.assertIn("__interrupt__", paused)
+            result = resume(graph, "wrong-hash", {"approved": True,
+                                                 "patchSha256": "incorrect"})
+            self.assertEqual("REJECTED", result["result"]["status"])
+            self.assertTrue(result["result"]["safeStop"])
+            self.assertEqual("SAFE_STOP", result["fallback"]["strategy"])
+            self.assertFalse(self.sandbox.joinpath("agentic-workspaces").exists())
+
     def test_path_escape_is_rejected(self):
         with self.assertRaises(ValueError):
             _clean_path("../../.env")
