@@ -23,13 +23,13 @@ def inventory(root: Path, target_paths: set[str], max_bytes=40000) -> dict:
         if target not in sources:
             continue
         text = sources[target]
-        declared = re.findall(r"\\b(?:class|interface|enum|record)\\s+(\\w+)", text)
-        methods = re.findall(r"\\bpublic\\s+(?:static\\s+)?[\\w<>?,.\\[\\]]+\\s+(\\w+)\\s*\\(", text)
+        declared = re.findall(r"\b(?:class|interface|enum|record)\s+(\w+)", text)
+        methods = re.findall(r"\bpublic\s+(?:static\s+)?[\w<>?,.\[\]]+\s+(\w+)\s*\(", text)
         references = []
         for path, other in sources.items():
             if path == target:
                 continue
-            if any(re.search(r"\\b" + re.escape(name) + r"\\b", other) for name in declared):
+            if any(re.search(r"\b" + re.escape(name) + r"\b", other) for name in declared):
                 references.append(path)
         impacted[target] = {"declaredTypes": declared, "publicMethods": methods,
                             "referencedBy": sorted(references),
