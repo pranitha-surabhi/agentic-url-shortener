@@ -86,8 +86,7 @@ def main() -> int:
         try:
             p = subprocess.run(command, capture_output=True, text=True, timeout=240)
             exit_code = p.returncode
-            log_tail = (p.stdout + "
-" + p.stderr)[-16000:]
+            log_tail = (p.stdout + chr(10) + p.stderr)[-16000:]
         except subprocess.TimeoutExpired:
             exit_code = 124
             log_tail = "Sandboxed Maven validation timed out"
