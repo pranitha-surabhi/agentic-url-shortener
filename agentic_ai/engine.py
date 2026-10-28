@@ -52,6 +52,7 @@ class State(TypedDict, total=False):
     diff: str
     approved: bool
     fallback: dict
+    summary: dict
     workspace: str
     result: dict
     evidence: list[str]
@@ -202,10 +203,28 @@ def build_graph(repo: Path, sandbox: Path, checkpointer):
             return {"result": {"status": "TEST_TIMEOUT", "verified": False,
                     "applied": True, "workspace": str(workspace)}}
 
+    def summarize(state: State):
+        diff = state.get("diff", "")
+        result = state.get("result", {})
+        return {"summary": {
+            "requirement": state.get("request", ""),
+            "clarifiedRequirement": state.get("clarified", ""),
+            "acceptanceCriteria": state.get("criteria", []),
+            "patchSha256": hashlib.sha256(diff.encode("utf-8")).hexdigest() if diff else None,
+            "filesChanged": [item["path"] for item in state.get("proposal", {}).get("changes", [])],
+            "risk": state.get("proposal", {}).get("risk", "Not assessed"),
+            "reviewDecision": "APPROVED" if state.get("approved") else "DECLINED",
+            "validationStatus": result.get("status", "UNKNOWN"),
+            "testVerified": result.get("verified", False),
+            "fallback": state.get("fallback", {}),
+            "assumptions": ["Model-generated change requires independent review and sandbox validation"],
+            "limitations": ["No deployment or automatic merge", "LLM correctness is not guaranteed"],
+        }}
+
     builder = StateGraph(State)
     for name, fn in [("clarify", clarify), ("propose", propose),
                      ("review", review), ("apply", apply),
-                     ("validate", validate), ("reject", reject)]:
+                     ("validate", validate), ("reject", reject), ("summarize", summarize)]:
         builder.add_node(name, fn)
     builder.add_edge(START, "clarify")
     builder.add_edge("clarify", "propose")
@@ -213,8 +232,9 @@ def build_graph(repo: Path, sandbox: Path, checkpointer):
     builder.add_conditional_edges("review", route_review,
                                    {"apply": "apply", "reject": "reject"})
     builder.add_edge("apply", "validate")
-    builder.add_edge("validate", END)
-    builder.add_edge("reject", END)
+    builder.add_edge("validate", "summarize")
+    builder.add_edge("reject", "summarize")
+    builder.add_edge("summarize", END)
     return builder.compile(checkpointer=checkpointer)
 
 def start(graph, thread: str, requirement: str):
