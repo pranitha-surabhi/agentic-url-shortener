@@ -12,11 +12,20 @@ jobs:
     timeout-minutes: 20
     environment: agentic-live-verification
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - name: Verify API key is configured before expensive setup
+        env:
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+        run: |
+          if [ -z "$OPENAI_API_KEY" ]; then
+            echo "::error title=Missing OPENAI_API_KEY::Add an OPENAI_API_KEY secret to the agentic-live-verification environment (Settings > Environments). The live-model demonstration cannot run without it."
+            exit 2
+          fi
+          echo "API key is configured (value hidden)."
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v6
         with:
           python-version: '3.11'
-      - uses: actions/setup-java@v4
+      - uses: actions/setup-java@v5
         with:
           distribution: temurin
           java-version: '21'
