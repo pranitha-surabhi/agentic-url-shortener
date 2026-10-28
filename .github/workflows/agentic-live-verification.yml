@@ -1,0 +1,41 @@
+name: Live agentic SDLC verification (manual)
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  live-agent:
+    # Only manually invoked on an authorized branch; no pull_request secrets.
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    environment: agentic-live-verification
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+      - name: Prepare offline Maven cache and container image
+        run: |
+          mvn -B --no-transfer-progress dependency:go-offline
+          docker pull maven:3.9.11-eclipse-temurin-21
+      - name: Install agent dependencies
+        run: python -m pip install -r agentic_ai/requirements.txt
+      - name: Invoke real LLM, review patch and run isolated Maven
+        env:
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          AGENTIC_ENABLE_TEST_EXECUTION: '0'
+        run: |
+          python -m agentic_ai.live_verification --repo . --report agentic-ai-verification.json
+      - name: Upload verification report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: agentic-live-verification
+          path: agentic-ai-verification.json
+          if-no-files-found: ignore
