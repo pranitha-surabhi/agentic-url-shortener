@@ -20,6 +20,7 @@ from langgraph.types import interrupt, Command
 from langchain_openai import ChatOpenAI
 from pydantic import BaseModel, Field
 from agentic_ai.impact import inventory
+from agentic_ai.provenance import decision_chain
 
 # Only a small set of business files can be changed by an agent.
 ALLOWLIST = {
@@ -53,6 +54,7 @@ class State(TypedDict, total=False):
     approved: bool
     fallback: dict
     summary: dict
+    lineage: list[dict]
     workspace: str
     result: dict
     evidence: list[str]
@@ -206,8 +208,15 @@ def build_graph(repo: Path, sandbox: Path, checkpointer):
     def summarize(state: State):
         diff = state.get("diff", "")
         result = state.get("result", {})
-        return {"summary": {
+        chain = decision_chain([
+            {"stage": "requirements", "sha256": hashlib.sha256(state.get("clarified", "").encode()).hexdigest()},
+            {"stage": "proposed_patch", "sha256": hashlib.sha256(diff.encode()).hexdigest()},
+            {"stage": "review", "approved": bool(state.get("approved"))},
+            {"stage": "validation", "status": result.get("status", "UNKNOWN"), "verified": bool(result.get("verified"))},
+        ])
+        return {"lineage": chain, "summary": {
             "requirement": state.get("request", ""),
+            "decisionChainHead": chain[-1]["sha256"],
             "clarifiedRequirement": state.get("clarified", ""),
             "acceptanceCriteria": state.get("criteria", []),
             "patchSha256": hashlib.sha256(diff.encode("utf-8")).hexdigest() if diff else None,
