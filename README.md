@@ -1,5 +1,13 @@
 # Agentic Software Engineering System — URL Shortener
 
+## Agentic AI technology implementation (verified source map)
+
+This repository combines a **Java Spring Boot SDLC orchestration engine** with a **separately launched Python LangGraph/LangChain agent**. The Python agent uses **ChatOpenAI** to interpret requirements and propose code changes. LangGraph provides stateful human-in-the-loop review and resumability. **MCP (Model Context Protocol) is not implemented**, and the term **MCO** is not an identified feature. A successful credentialed live-LLM verification run is still required to demonstrate model-backed code generation and sandbox Maven testing.
+
+**[Read the Agentic AI, LangGraph, LangChain, LLM and MCP implementation guide](docs/AGENTIC-AI-TECHNOLOGY-GUIDE.md)** for architecture, concrete file paths, corrected patch approval syntax, security boundaries, and current evidence.
+
+---
+
 ## 1. Project Overview
 
 This project is a Java 21 and Spring Boot prototype that demonstrates an **agentic software engineering workflow** around a URL shortener.

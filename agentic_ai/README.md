@@ -18,8 +18,10 @@ The graph may return `__interrupt__` asking for missing acceptance criteria or a
 
 ```bash
 python -m agentic_ai.cli resume --thread demo-greenfield --response '{"answer":"Only HTTP(S), reject credentials in URLs"}'
-python -m agentic_ai.cli resume --thread demo-greenfield --response '{"approved":true}'
+python -m agentic_ai.cli resume --thread demo-greenfield --response '{"approved":true,"patchSha256":"<exact-digest-from-patch-approval-interrupt>"}'
 ```
+
+**Important:** Review the emitted diff and copy its exact `patchSha256` from the `patch_approval` interrupt. The digest placeholder above must be replaced before approval. A bare `{"approved":true}` will be rejected. This is patch binding, not authenticated reviewer identity. For the full technology map and MCP status, see [Agentic AI Technology Guide](../docs/AGENTIC-AI-TECHNOLOGY-GUIDE.md).
 
 Use separate thread IDs for greenfield, brownfield, and ambiguous demos. Brownfield request example: "Update the existing URL validator to reject URLs with userinfo and add a regression test." Ambiguous example: "Make URL redirects faster" (answer the latency target, supported load and measurement procedure when interrupted).
 
