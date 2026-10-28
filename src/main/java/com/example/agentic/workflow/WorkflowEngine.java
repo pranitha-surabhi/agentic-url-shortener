@@ -215,13 +215,13 @@ public class WorkflowEngine {
                     && completed.size()
                     == graph.getNodes().size()) {
 
-                context.setCurrentState(
-                        WorkflowState.COMPLETED
-                );
-
-                context.setStatus(
-                        WorkflowStatus.COMPLETED
-                );
+                if ("BLOCKED".equals(context.getStageOutputs().get("releaseReadiness"))) {
+                    context.setStatus(WorkflowStatus.STOPPED);
+                    context.addAuditEvent("Release blocked: missing trusted execution evidence");
+                } else {
+                    context.setCurrentState(WorkflowState.COMPLETED);
+                    context.setStatus(WorkflowStatus.COMPLETED);
+                }
 
                 context.setCompletedAt(
                         LocalDateTime.now()
@@ -458,13 +458,13 @@ public class WorkflowEngine {
                     && completed.size()
                     == graph.getNodes().size()) {
 
-                context.setCurrentState(
-                        WorkflowState.COMPLETED
-                );
-
-                context.setStatus(
-                        WorkflowStatus.COMPLETED
-                );
+                if ("BLOCKED".equals(context.getStageOutputs().get("releaseReadiness"))) {
+                    context.setStatus(WorkflowStatus.STOPPED);
+                    context.addAuditEvent("Release blocked: missing trusted execution evidence");
+                } else {
+                    context.setCurrentState(WorkflowState.COMPLETED);
+                    context.setStatus(WorkflowStatus.COMPLETED);
+                }
 
                 context.setCompletedAt(
                         LocalDateTime.now()
