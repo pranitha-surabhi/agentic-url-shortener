@@ -13,8 +13,11 @@ public final class UrlValidator {
 
             URI uri = new URI(url);
 
-            return uri.getScheme() != null
-                    && uri.getHost() != null;
+            return ("http".equalsIgnoreCase(uri.getScheme())
+                    || "https".equalsIgnoreCase(uri.getScheme()))
+                    && uri.getHost() != null
+                    && !uri.getHost().isBlank()
+                    && uri.getUserInfo() == null;
 
         } catch (Exception ex) {
 
