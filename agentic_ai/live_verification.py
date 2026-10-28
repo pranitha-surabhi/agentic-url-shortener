@@ -57,7 +57,7 @@ def main() -> int:
                 if not any(p.endswith("UrlShortenerServiceTest.java") for p in paths):
                     raise RuntimeError("Live patch did not include a regression test")
                 # Verification-only approval applies to temporary workspace, not production.
-                state = resume(graph, thread, {"approved": True})
+                state = resume(graph, thread, {"approved": True, "patchSha256": hashlib.sha256(diff.encode("utf-8")).hexdigest()})
             else:
                 raise RuntimeError("Unexpected graph interrupt")
         result = state.get("result", {})

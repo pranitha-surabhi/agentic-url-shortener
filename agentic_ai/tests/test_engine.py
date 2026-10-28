@@ -1,9 +1,11 @@
+import hashlib
 import tempfile
 import unittest
 from pathlib import Path
 from unittest.mock import patch
 
 from langgraph.checkpoint.memory import InMemorySaver
+from agentic_ai.provenance import verify_chain
 from agentic_ai.engine import (
     ALLOWLIST, ProposedPatch, ClarificationDecision, build_graph, start, resume, _clean_path
 )
@@ -51,8 +53,12 @@ class GraphScenarios(unittest.TestCase):
             graph = build_graph(self.repo, self.sandbox, InMemorySaver())
             paused = start(graph, "greenfield", "Create a URL feature")
             self.assertIn("__interrupt__", paused)
-            approved = resume(graph, "greenfield", {"approved": True})
+            approved = resume(graph, "greenfield", {"approved": True, "patchSha256": hashlib.sha256(paused["__interrupt__"][0].value["diff"].encode()).hexdigest()})
             self.assertEqual("PENDING_SANDBOX_TESTS", approved["result"]["status"])
+            self.assertEqual("APPROVED", approved["summary"]["reviewDecision"])
+            self.assertEqual("PENDING_SANDBOX_TESTS", approved["summary"]["validationStatus"])
+            self.assertTrue(approved["summary"]["patchSha256"])
+            self.assertTrue(verify_chain(approved["lineage"]))
             workspace = Path(approved["workspace"])
             changed = sorted(ALLOWLIST)[0]
             self.assertIn("Changed", (workspace / changed).read_text())
@@ -65,6 +71,7 @@ class GraphScenarios(unittest.TestCase):
             self.assertIn("__interrupt__", paused)
             rejected = resume(graph, "brownfield", {"approved": False})
             self.assertEqual("REJECTED", rejected["result"]["status"])
+            self.assertEqual("SAFE_STOP", rejected["summary"]["fallback"]["strategy"])
             self.assertNotIn("workspace", rejected)
 
     def test_ambiguous_requirement_requests_clarification_before_patch(self):
@@ -76,6 +83,18 @@ class GraphScenarios(unittest.TestCase):
             self.assertEqual("patch_approval", second["__interrupt__"][0].value["kind"])
             final = resume(graph, "ambiguous", {"approved": False})
             self.assertEqual("REJECTED", final["result"]["status"])
+
+    def test_approval_with_wrong_patch_hash_cannot_apply(self):
+        with patch("agentic_ai.engine._model", return_value=FakeModel()):
+            graph = build_graph(self.repo, self.sandbox, InMemorySaver())
+            paused = start(graph, "wrong-hash", "Update existing validator")
+            self.assertIn("__interrupt__", paused)
+            result = resume(graph, "wrong-hash", {"approved": True,
+                                                 "patchSha256": "incorrect"})
+            self.assertEqual("REJECTED", result["result"]["status"])
+            self.assertTrue(result["result"]["safeStop"])
+            self.assertEqual("SAFE_STOP", result["fallback"]["strategy"])
+            self.assertFalse(self.sandbox.joinpath("agentic-workspaces").exists())
 
     def test_path_escape_is_rejected(self):
         with self.assertRaises(ValueError):

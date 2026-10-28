@@ -19,6 +19,8 @@ from langgraph.graph import StateGraph, START, END
 from langgraph.types import interrupt, Command
 from langchain_openai import ChatOpenAI
 from pydantic import BaseModel, Field
+from agentic_ai.impact import inventory
+from agentic_ai.provenance import decision_chain
 
 # Only a small set of business files can be changed by an agent.
 ALLOWLIST = {
@@ -50,6 +52,9 @@ class State(TypedDict, total=False):
     proposal: dict
     diff: str
     approved: bool
+    fallback: dict
+    summary: dict
+    lineage: list[dict]
     workspace: str
     result: dict
     evidence: list[str]
@@ -108,6 +113,7 @@ def build_graph(repo: Path, sandbox: Path, checkpointer):
             "task": state["clarified"],
             "acceptance_criteria": state["criteria"],
             "repository_files": originals,
+            "brownfield_impact": inventory(repo, set(originals)),
             "constraints": [
                 "Make minimal real changes to the existing URL shortener",
                 "Only return complete files from the supplied allowlist",
@@ -141,17 +147,21 @@ def build_graph(repo: Path, sandbox: Path, checkpointer):
     def review(state: State):
         decision = interrupt({"kind": "patch_approval",
                  "diff": state["diff"],
+                 "patchSha256": hashlib.sha256(state["diff"].encode("utf-8")).hexdigest(),
                  "risk": state["proposal"]["risk"],
                  "tests": state["proposal"]["tests"],
                  "instruction": "Only an authorized reviewer should approve this patch."})
-        approved = isinstance(decision, dict) and decision.get("approved") is True
+        approved = (isinstance(decision, dict) and decision.get("approved") is True
+                    and decision.get("patchSha256") == hashlib.sha256(
+                        state["diff"].encode("utf-8")).hexdigest())
         return {"approved": approved}
 
     def route_review(state: State):
         return "apply" if state.get("approved") else "reject"
 
     def reject(state: State):
-        return {"result": {"status": "REJECTED", "applied": False}}
+        return {"fallback": {"strategy": "SAFE_STOP", "reason": "PATCH_NOT_APPROVED"},
+                "result": {"status": "REJECTED", "applied": False, "safeStop": True}}
 
     def apply(state: State):
         # Everything runs in an isolated copy; the original Git checkout is untouched.
@@ -195,10 +205,35 @@ def build_graph(repo: Path, sandbox: Path, checkpointer):
             return {"result": {"status": "TEST_TIMEOUT", "verified": False,
                     "applied": True, "workspace": str(workspace)}}
 
+    def summarize(state: State):
+        diff = state.get("diff", "")
+        result = state.get("result", {})
+        chain = decision_chain([
+            {"stage": "requirements", "sha256": hashlib.sha256(state.get("clarified", "").encode()).hexdigest()},
+            {"stage": "proposed_patch", "sha256": hashlib.sha256(diff.encode()).hexdigest()},
+            {"stage": "review", "approved": bool(state.get("approved"))},
+            {"stage": "validation", "status": result.get("status", "UNKNOWN"), "verified": bool(result.get("verified"))},
+        ])
+        return {"lineage": chain, "summary": {
+            "requirement": state.get("request", ""),
+            "decisionChainHead": chain[-1]["sha256"],
+            "clarifiedRequirement": state.get("clarified", ""),
+            "acceptanceCriteria": state.get("criteria", []),
+            "patchSha256": hashlib.sha256(diff.encode("utf-8")).hexdigest() if diff else None,
+            "filesChanged": [item["path"] for item in state.get("proposal", {}).get("changes", [])],
+            "risk": state.get("proposal", {}).get("risk", "Not assessed"),
+            "reviewDecision": "APPROVED" if state.get("approved") else "DECLINED",
+            "validationStatus": result.get("status", "UNKNOWN"),
+            "testVerified": result.get("verified", False),
+            "fallback": state.get("fallback", {}),
+            "assumptions": ["Model-generated change requires independent review and sandbox validation"],
+            "limitations": ["No deployment or automatic merge", "LLM correctness is not guaranteed"],
+        }}
+
     builder = StateGraph(State)
     for name, fn in [("clarify", clarify), ("propose", propose),
                      ("review", review), ("apply", apply),
-                     ("validate", validate), ("reject", reject)]:
+                     ("validate", validate), ("reject", reject), ("summarize", summarize)]:
         builder.add_node(name, fn)
     builder.add_edge(START, "clarify")
     builder.add_edge("clarify", "propose")
@@ -206,8 +241,9 @@ def build_graph(repo: Path, sandbox: Path, checkpointer):
     builder.add_conditional_edges("review", route_review,
                                    {"apply": "apply", "reject": "reject"})
     builder.add_edge("apply", "validate")
-    builder.add_edge("validate", END)
-    builder.add_edge("reject", END)
+    builder.add_edge("validate", "summarize")
+    builder.add_edge("reject", "summarize")
+    builder.add_edge("summarize", END)
     return builder.compile(checkpointer=checkpointer)
 
 def start(graph, thread: str, requirement: str):
