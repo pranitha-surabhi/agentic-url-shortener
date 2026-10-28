@@ -62,12 +62,16 @@ def main() -> int:
             raise RuntimeError("Workspace escaped sandbox root")
         # No model-controlled paths reach this docker invocation.
         image = "maven:3.9.11-eclipse-temurin-21"
-        cache = (Path.home() / ".m2" / "repository").resolve()\n        if not cache.is_dir():\n            raise RuntimeError("Prewarmed offline Maven cache is required")\n        command = ["docker", "run", "--rm", "--network", "none",
+        cache = (Path.home() / ".m2" / "repository").resolve()
+        if not cache.is_dir():
+            raise RuntimeError("Prewarmed offline Maven cache is required")
+        command = ["docker", "run", "--rm", "--network", "none",
             "--user", f"{os.getuid()}:{os.getgid()}", "--cap-drop", "ALL",
             "--security-opt", "no-new-privileges", "--pids-limit", "256",
             "--memory", "1536m", "--cpus", "2", "--read-only",
             "--tmpfs", "/tmp:rw,noexec,nosuid,size=128m",
-            "--mount", f"type=bind,source={target},target=/workspace",\n            "--mount", f"type=bind,source={cache},target=/maven-repo,readonly",
+            "--mount", f"type=bind,source={target},target=/workspace",
+            "--mount", f"type=bind,source={cache},target=/maven-repo,readonly",
             "--workdir", "/workspace",
             "--env", "HOME=/tmp",
             "--env", "MAVEN_OPTS=-Dmaven.repo.local=/maven-repo",
