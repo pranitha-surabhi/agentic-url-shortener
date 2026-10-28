@@ -51,7 +51,13 @@ def main() -> int:
                 diff = interruptions[0].value["diff"]
                 if not diff.strip() or len(diff) > 100000:
                     raise RuntimeError("No reviewable model patch was produced")
-                paths = {change["path"] for change in state["proposal"]["changes"]}\n                if not any(p.endswith("UrlValidator.java") for p in paths):\n                    raise RuntimeError("Live patch did not modify the requested validator")\n                if not any(p.endswith("UrlShortenerServiceTest.java") for p in paths):\n                    raise RuntimeError("Live patch did not include a regression test")\n                # Verification-only approval applies to temporary workspace, not production.\n                state = resume(graph, thread, {"approved": True})
+                paths = {change["path"] for change in state["proposal"]["changes"]}
+                if not any(p.endswith("UrlValidator.java") for p in paths):
+                    raise RuntimeError("Live patch did not modify the requested validator")
+                if not any(p.endswith("UrlShortenerServiceTest.java") for p in paths):
+                    raise RuntimeError("Live patch did not include a regression test")
+                # Verification-only approval applies to temporary workspace, not production.
+                state = resume(graph, thread, {"approved": True})
             else:
                 raise RuntimeError("Unexpected graph interrupt")
         result = state.get("result", {})
@@ -80,7 +86,8 @@ def main() -> int:
         try:
             p = subprocess.run(command, capture_output=True, text=True, timeout=240)
             exit_code = p.returncode
-            log_tail = (p.stdout + "\n" + p.stderr)[-16000:]
+            log_tail = (p.stdout + "
+" + p.stderr)[-16000:]
         except subprocess.TimeoutExpired:
             exit_code = 124
             log_tail = "Sandboxed Maven validation timed out"
