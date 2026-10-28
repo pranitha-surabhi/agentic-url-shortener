@@ -19,6 +19,7 @@ from langgraph.graph import StateGraph, START, END
 from langgraph.types import interrupt, Command
 from langchain_openai import ChatOpenAI
 from pydantic import BaseModel, Field
+from agentic_ai.impact import inventory
 
 # Only a small set of business files can be changed by an agent.
 ALLOWLIST = {
@@ -109,6 +110,7 @@ def build_graph(repo: Path, sandbox: Path, checkpointer):
             "task": state["clarified"],
             "acceptance_criteria": state["criteria"],
             "repository_files": originals,
+            "brownfield_impact": inventory(repo, set(originals)),
             "constraints": [
                 "Make minimal real changes to the existing URL shortener",
                 "Only return complete files from the supplied allowlist",
