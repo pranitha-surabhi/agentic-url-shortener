@@ -5,6 +5,7 @@ from pathlib import Path
 from unittest.mock import patch
 
 from langgraph.checkpoint.memory import InMemorySaver
+from agentic_ai.provenance import verify_chain
 from agentic_ai.engine import (
     ALLOWLIST, ProposedPatch, ClarificationDecision, build_graph, start, resume, _clean_path
 )
@@ -57,6 +58,7 @@ class GraphScenarios(unittest.TestCase):
             self.assertEqual("APPROVED", approved["summary"]["reviewDecision"])
             self.assertEqual("PENDING_SANDBOX_TESTS", approved["summary"]["validationStatus"])
             self.assertTrue(approved["summary"]["patchSha256"])
+            self.assertTrue(verify_chain(approved["lineage"]))
             workspace = Path(approved["workspace"])
             changed = sorted(ALLOWLIST)[0]
             self.assertIn("Changed", (workspace / changed).read_text())
