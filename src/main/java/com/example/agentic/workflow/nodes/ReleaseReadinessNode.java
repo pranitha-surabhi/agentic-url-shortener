@@ -20,24 +20,19 @@ public class ReleaseReadinessNode implements WorkflowNode {
 
     @Override
     public void execute(WorkflowContext context) {
-
-        if (context.getValidationResults().isEmpty()) {
-            throw new IllegalStateException(
-                    "Release cannot proceed without validation"
-            );
+        // The current testing node only emits narrative claims: it does not
+        // execute a test runner. Do not mistake those claims for test evidence.
+        Object testEvidence = context.getStageOutputs().get("verifiedTestEvidence");
+        Object implementationEvidence = context.getStageOutputs().get("verifiedImplementationEvidence");
+        if (!(testEvidence instanceof Boolean && (Boolean) testEvidence)
+                || !(implementationEvidence instanceof Boolean && (Boolean) implementationEvidence)) {
+            context.addRisk("Release blocked: verifiable code and test execution evidence is missing");
+            context.addDecision("Require trusted CI and implementation evidence before release");
+            context.addStageOutput("releaseReadiness", "BLOCKED");
+            return;
         }
-
-        context.addValidationResult(
-                "Release readiness gate passed"
-        );
-
-        context.addDecision(
-                "Workflow is ready for completion"
-        );
-
-        context.addStageOutput(
-                "releaseReadiness",
-                "READY"
-        );
+        context.addValidationResult("Release readiness gate passed with verified execution evidence");
+        context.addDecision("Workflow is ready for human release review");
+        context.addStageOutput("releaseReadiness", "READY_FOR_HUMAN_REVIEW");
     }
 }
