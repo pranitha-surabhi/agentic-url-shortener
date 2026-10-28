@@ -243,6 +243,14 @@ public class WorkflowEngine {
                     System.currentTimeMillis();
 
             context.restore(checkpoint);
+            try {
+                if (ArtifactWorkspaceRollback.rollback(context.getWorkflowId())) {
+                    context.addAuditEvent("Rolled back generated workspace after failure");
+                }
+            } catch (Exception cleanupFailure) {
+                context.addAuditEvent("Workspace cleanup requires manual review: "
+                        + cleanupFailure.getClass().getSimpleName());
+            }
 
             context.setStatus(
                     WorkflowStatus.ROLLED_BACK
@@ -339,6 +347,14 @@ public class WorkflowEngine {
             }
         } catch (Exception exception) {
             context.restore(checkpoint);
+            try {
+                if (ArtifactWorkspaceRollback.rollback(context.getWorkflowId())) {
+                    context.addAuditEvent("Rolled back generated workspace after failure");
+                }
+            } catch (Exception cleanupFailure) {
+                context.addAuditEvent("Workspace cleanup requires manual review: "
+                        + cleanupFailure.getClass().getSimpleName());
+            }
             context.setStatus(WorkflowStatus.ROLLED_BACK);
             context.addAuditEvent("Resume failed and checkpoint restored: "
                     + exception.getClass().getSimpleName());
@@ -556,6 +572,14 @@ public class WorkflowEngine {
         } catch (Exception exception) {
 
             context.restore(checkpoint);
+            try {
+                if (ArtifactWorkspaceRollback.rollback(context.getWorkflowId())) {
+                    context.addAuditEvent("Rolled back generated workspace after failure");
+                }
+            } catch (Exception cleanupFailure) {
+                context.addAuditEvent("Workspace cleanup requires manual review: "
+                        + cleanupFailure.getClass().getSimpleName());
+            }
 
             context.setStatus(
                     WorkflowStatus.ROLLED_BACK
