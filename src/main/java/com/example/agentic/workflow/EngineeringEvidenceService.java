@@ -44,7 +44,9 @@ public class EngineeringEvidenceService {
             }
             Files.createDirectories(work);
             Path source = work.resolve("GeneratedUrlPolicy.java");
-            // Requirement text is deliberately not interpolated into source code.
+            // Choose a bounded, audited implementation template from the requirement.
+            // Untrusted requirement text is never interpolated into executable source.
+            String feature = classifyFeature(requirement);
             String code = """
                     public final class GeneratedUrlPolicy {
                         private GeneratedUrlPolicy() {}
@@ -62,6 +64,14 @@ public class EngineeringEvidenceService {
                         }
                     }
                     """;
+            if ("CUSTOM_ALIAS".equals(feature)) {
+                code = code.replace("public static boolean isHttpUrl(String value)",
+                        "public static boolean isHttpUrl(String value)")
+                        .replace("private GeneratedUrlPolicy() {}",
+                        "private GeneratedUrlPolicy() {}\\n" +
+                        "    public static boolean isValidAlias(String alias) { " +
+                        "return alias != null && alias.matches(\\\"[a-zA-Z0-9_-]{3,32}\\\"); }");
+            }
             Files.writeString(source, code, StandardCharsets.UTF_8,
                     StandardOpenOption.CREATE, StandardOpenOption.TRUNCATE_EXISTING);
             JavaCompiler compiler = ToolProvider.getSystemJavaCompiler();
@@ -85,22 +95,34 @@ public class EngineeringEvidenceService {
                         boolean actual = (boolean) method.invoke(null, cases.get(i));
                         if (actual == (i != 2)) passed++;
                     }
+                    if ("CUSTOM_ALIAS".equals(feature)) {
+                        Method alias = generated.getMethod("isValidAlias", String.class);
+                        if ((boolean) alias.invoke(null, "my-alias_1")) passed++;
+                        if (!(boolean) alias.invoke(null, "bad alias")) passed++;
+                    }
                 } catch (ReflectiveOperationException ex) {
                     throw new IllegalStateException("Generated source validation failed", ex);
                 }
             }
-            boolean contractsPassed = passed == cases.size();
+            int expectedCount = cases.size() + ("CUSTOM_ALIAS".equals(feature) ? 2 : 0);
+            boolean contractsPassed = passed == expectedCount;
             Path report = work.resolve("validation.txt");
             Files.writeString(report, "compilationPassed=" + compiled
-                    + "\ncontractAssertionsPassed=" + passed + "/" + cases.size()
+                    + "\ncontractAssertionsPassed=" + passed + "/" + expectedCount
                     + "\nNOTE: generated deterministic code was executed; CI must validate integration.\n",
                     StandardCharsets.UTF_8, StandardOpenOption.CREATE,
                     StandardOpenOption.TRUNCATE_EXISTING);
             return new Evidence(source.toString(), digest(code), report.toString(),
-                    compiled, contractsPassed, cases.size());
+                    compiled, contractsPassed, expectedCount);
         } catch (IOException e) {
             throw new IllegalStateException("Engineering artifact generation failed", e);
         }
+    }
+
+    private String classifyFeature(String requirement) {
+        String lower = requirement == null ? "" : requirement.toLowerCase(java.util.Locale.ROOT);
+        return (lower.contains("alias") || lower.contains("custom code"))
+                ? "CUSTOM_ALIAS" : "URL_POLICY";
     }
 
     private String digest(String value) {
