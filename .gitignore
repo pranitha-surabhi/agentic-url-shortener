@@ -34,3 +34,6 @@ build/
 
 # Local workflow evidence, snapshots and audit logs
 /data/
+
+.agentic-workspaces/
+.agentic-checkpoints.sqlite*
