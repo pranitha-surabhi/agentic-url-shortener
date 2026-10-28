@@ -50,6 +50,7 @@ class State(TypedDict, total=False):
     proposal: dict
     diff: str
     approved: bool
+    fallback: dict
     workspace: str
     result: dict
     evidence: list[str]
@@ -141,17 +142,21 @@ def build_graph(repo: Path, sandbox: Path, checkpointer):
     def review(state: State):
         decision = interrupt({"kind": "patch_approval",
                  "diff": state["diff"],
+                 "patchSha256": hashlib.sha256(state["diff"].encode("utf-8")).hexdigest(),
                  "risk": state["proposal"]["risk"],
                  "tests": state["proposal"]["tests"],
                  "instruction": "Only an authorized reviewer should approve this patch."})
-        approved = isinstance(decision, dict) and decision.get("approved") is True
+        approved = (isinstance(decision, dict) and decision.get("approved") is True
+                    and decision.get("patchSha256") == hashlib.sha256(
+                        state["diff"].encode("utf-8")).hexdigest())
         return {"approved": approved}
 
     def route_review(state: State):
         return "apply" if state.get("approved") else "reject"
 
     def reject(state: State):
-        return {"result": {"status": "REJECTED", "applied": False}}
+        return {"fallback": {"strategy": "SAFE_STOP", "reason": "PATCH_NOT_APPROVED"},
+                "result": {"status": "REJECTED", "applied": False, "safeStop": True}}
 
     def apply(state: State):
         # Everything runs in an isolated copy; the original Git checkout is untouched.
