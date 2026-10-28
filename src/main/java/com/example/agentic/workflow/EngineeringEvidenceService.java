@@ -65,12 +65,10 @@ public class EngineeringEvidenceService {
                     }
                     """;
             if ("CUSTOM_ALIAS".equals(feature)) {
-                code = code.replace("public static boolean isHttpUrl(String value)",
-                        "public static boolean isHttpUrl(String value)")
-                        .replace("private GeneratedUrlPolicy() {}",
-                        "private GeneratedUrlPolicy() {}\\n" +
-                        "    public static boolean isValidAlias(String alias) { " +
-                        "return alias != null && alias.matches(\\\"[a-zA-Z0-9_-]{3,32}\\\"); }");
+                code = code.replace("private GeneratedUrlPolicy() {}",
+                        "private GeneratedUrlPolicy() {}" + System.lineSeparator()
+                        + "    public static boolean isValidAlias(String alias) { "
+                        + "return alias != null && alias.matches(\"[a-zA-Z0-9_-]{3,32}\"); }");
             }
             Files.writeString(source, code, StandardCharsets.UTF_8,
                     StandardOpenOption.CREATE, StandardOpenOption.TRUNCATE_EXISTING);
