@@ -5,6 +5,8 @@ import com.example.agentic.dto.response.WorkflowResponse;
 import com.example.agentic.service.WorkflowService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
+import org.springframework.http.HttpStatus;
+import org.springframework.web.server.ResponseStatusException;
 import org.springframework.web.bind.annotation.*;
 
 @RestController
@@ -20,10 +22,15 @@ public class WorkflowController {
             @RequestParam(defaultValue = "false")
             boolean approvalGranted) {
 
+        if (approvalGranted) {
+            throw new ResponseStatusException(HttpStatus.FORBIDDEN,
+                    "Approval cannot be granted through workflow execution");
+        }
+
         WorkflowResponse response =
                 workflowService.executeWorkflow(
                         requirement,
-                        approvalGranted
+                        false
                 );
 
         return ResponseEntity.ok(
